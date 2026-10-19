@@ -17,12 +17,18 @@ jobs:
     timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Przygotuj pomiary przegladarkowe
+        run: |
+          python -m pip install playwright==1.63.0
+          python -m playwright install --with-deps chromium
       - name: Skanuj strony firm
         env:
-          MAX_AUDITS: '25'
+          MAX_AUDITS: '12'
         run: python radar.py
       - name: Pokaz raport w logach
         if: always()
