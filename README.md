@@ -1,32 +1,23 @@
-# EcoWebLab Lead Radar — wersja GitHub Actions
+# EcoWebLab — radar producentów w Polsce
 
-Automatyczny screening stron polskich firm B2B, bez VPS, karty i zewnętrznych płatnych API.
+Cel: producenci faktycznie wytwarzający w Polsce, których strona wymaga poprawy lub przebudowy. Wszystkie końcówki domen są dozwolone, w tym .com. Katalogi, agregatory, portale oraz sami dystrybutorzy nie są leadami.
 
-## Jak uruchomić
+## Kwalifikacja
 
-1. W repozytorium otwórz **Actions**.
-2. Wybierz **EcoWebLab - codzienny radar**, następnie **Run workflow**.
-3. Po wykonaniu otwórz **Summary** — tabela potencjalnych okazji.
-4. W **Artifacts** pobierz plik `leady.csv` (Excel) i `raport.md`.
+RSS Bing nominuje kandydatów. Skrypt czyta stronę główną i do 3 podstron (firma, oferta, aktualności). Wymaga tekstowego dowodu produkcji w Polsce na witrynie firmy. Jest to heurystyka: dowód musi zostać sprawdzony w codziennym podsumowaniu; brak dowodu wyklucza firmę z CSV. Domena i język nie określają miejsca produkcji. Katalog factories.pl jest jawnie wykluczony. Plik seeds.csv (opcjonalny nagłówek url) może zawierać publiczne strony do sprawdzenia; podlegają tym samym kryteriom.
 
-Automat jest skonfigurowany na codziennie o 06:17 UTC (08:17 czasu letniego lub 07:17 czasu zimowego w Polsce). Skan uruchamia się również po zmianach `radar.py`, `seeds.csv` lub workflow na gałęzi `main`, a także ręcznie przez **Run workflow**. GitHub może opóźniać harmonogram, a w publicznym nieaktywnym repozytorium może go czasowo wyłączyć.
+## Pomiary i dowody
 
-## Co robi
+Chromium wykonuje dwa wczytania bez cache: desktop 1365 px i mobile 390 px. Rejestruje czas load, TTFB, przesłane bajty, błędy HTTP zasobów własnej domeny, wyjątki JS, niedziałające obrazy i poziome przewijanie. Próg wolnego ładowania: >4 s w obu próbach; ciężka strona: >3 MB transferu w jednej. To laboratoryjny screening z GitHub (USA), bez symulacji łącza/CPU, nie terenowe Core Web Vitals. Błędy pomiarów są jawne. Blokady dostępu nie są wadą strony i nie są obchodzone.
 
-Szuka producentów, firm CNC, dystrybutorów, firm technicznych i architektonicznych w publicznych wynikach RSS Bing. Dla maksymalnie 25 unikalnych domen sprawdza podstawowe elementy HTML strony głównej i wykonuje punktowany screening. Każda pozycja ma URL. Problemy z pobraniem są raportowane, nie ukrywane.
+Dodatkowo: starsze elementy HTML, mało tekstu, brak wyraźnej ścieżki do oferty/kontaktu, brak głównego nagłówka. Słabe proxy nie są automatyczną oceną estetyki. Wygląd, jasność oferty i kompletność informacji wymagają analizy zrzutów oraz treści. Zrzuty są dołączone do artefaktów. Punktacja >=20 daje kandydata, nie potwierdzony lead zakupowy.
 
-## Ograniczenia i prywatność
+Sygnały rozwoju: wzmianki o nowych halach, liniach, zakładach i zwiększeniu mocy. Skrypt zbiera je jako niepotwierdzone; codzienne podsumowanie sprawdza datę (ostatnie 12 miesięcy), źródło, skalę oraz problemy strony. Samo hasło o rozwoju lub zakładka Kariera nie wystarczają.
 
-- To heurystyka, nie pełen Lighthouse i nie pentest. Brak CSP nie dowodzi podatności, a wolna odpowiedź w jednym pomiarze nie dowodzi stale wolnej strony.
-- Nie ma modelu językowego AI ani identyfikacji decydentów. Nie są wysyłane wiadomości marketingowe.
-- Wyszukanie domeny nie potwierdza, że firma chce kupić stronę. Wymaga ręcznej kwalifikacji.
-- **Uwaga: to repozytorium jest PUBLICZNE.** Nie umieszczaj w nim poufnych danych, kontaktów, notatek CRM ani kluczy API. Artefakty uruchomień mogą być publicznie widoczne.
-- Źródło Bing RSS może ograniczyć lub odmówić odpowiedzi. Raport pozostanie wtedy pusty lub częściowy, a błędy będą opisane.
+## Wyniki i harmonogram
 
-## Dodatkowe strony do sprawdzenia
+GitHub Actions: 06:17 UTC codziennie (08:17 latem / 07:17 zimą w Polsce), ręcznie przez Run workflow oraz po zmianie kodu/workflow/seeds na main. Limit: 12 kandydatów na skan, 18 minut. Artefakty przez 30 dni: raport.md, leady.csv (tylko kandydaci), wyniki.json (także odrzucenia) i zrzuty PNG. Raport dostępny też w Summary i logach. Brak trafnych wyników jest raportowany, nie zastępowany przypadkowymi firmami.
 
-Opcjonalnie stwórz w głównym katalogu `seeds.csv` z nagłówkami `url,industry` i adresami **publicznych stron firm**. Nie dodawaj tam danych poufnych.
+Osobne zadanie w ChatGPT dostarcza podsumowanie około 09:00 czasu Europe/Warsaw i uzupełnia słabe wyniki źródła wyszukiwaniem oraz weryfikacją. Workflow sam nie wysyła wiadomości do ChatGPT.
 
-## Kontrola trafności
-
-Wyniki automatycznego wyszukiwania muszą mieć domenę `.pl` oraz termin branżowy w tytule lub opisie wyniku RSS. Jest to filtr heurystyczny, nie potwierdzenie profilu firmy; może pominąć polskie firmy z innymi domenami. Gdy źródło nie dostarczy trafnych wyników, raport opisuje brak wyników zamiast prezentować przypadkowe strony. Lista `seeds.csv` jest opcjonalnym źródłem ręcznie wybranych publicznych domen. Skrypt nie śledzi przekierowań HTTP — takie strony są wykazywane jako błędy pobrania.
+GitHub może opóźniać skany i wyłącza harmonogram publicznego repo po 60 dniach bez aktywności. Brak płatnych API, VPS i karty. Żadnych wiadomości marketingowych ani logowania do stron firm. Repozytorium, logi i artefakty są publiczne: nie dodawaj kluczy, danych klientów ani notatek CRM.
