@@ -1,0 +1,38 @@
+name: EcoWebLab - codzienny radar
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'radar.py'
+      - 'seeds.csv'
+      - '.github/workflows/radar.yml'
+  schedule:
+    - cron: '17 6 * * *'
+permissions:
+  contents: read
+jobs:
+  radar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Skanuj strony firm
+        env:
+          MAX_AUDITS: '25'
+        run: python radar.py
+      - name: Pokaz raport w logach
+        if: always()
+        run: |
+          if [ -f output/raport.md ]; then cat output/raport.md; fi
+      - name: Zapisz raport i CSV
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecoweblab-leady-${{ github.run_number }}
+          path: output/
+          retention-days: 30
+          if-no-files-found: warn
