@@ -9,13 +9,25 @@ ROOT = Path(__file__).parent
 OUT = ROOT / 'output'
 OUT.mkdir(exist_ok=True)
 QUERIES = [
-    ('Producenci', 'producent maszyn przemysłowych Polska firma'),
-    ('CNC', 'firma obróbka CNC Polska producent'),
-    ('Dystrybutorzy', 'dystrybutor automatyki przemysłowej Polska'),
-    ('Techniczne B2B', 'producent elementów metalowych Polska'),
-    ('Architekci', 'pracownia architektoniczna komercyjne projekty Polska'),
+    ('Producenci', 'site:.pl producent maszyn przemysłowych'),
+    ('CNC', 'site:.pl obróbka CNC producent'),
+    ('Dystrybutorzy', 'site:.pl dystrybutor automatyki przemysłowej'),
+    ('Techniczne B2B', 'site:.pl producent elementów metalowych'),
+    ('Architekci', 'site:.pl pracownia architektoniczna projekty'),
 ]
 EXCLUDE = {'bing.com', 'google.com', 'google.pl', 'youtube.com', 'linkedin.com', 'facebook.com', 'instagram.com', 'wikipedia.org', 'panoramafirm.pl', 'pkt.pl', 'aleo.com', 'oferteo.pl', 'olx.pl', 'pracuj.pl', 'gov.pl', 'news.google.com', 'wp.pl', 'onet.pl', 'interia.pl', 'money.pl', 'forbes.pl', 'bankier.pl', 'europa.eu', 'tiktok.com'}
+CATEGORY_TERMS = {
+    'Producenci': ('maszyn', 'produkcj'),
+    'CNC': ('cnc', 'obróbk', 'obrobk'),
+    'Dystrybutorzy': ('automatyk', 'dystrybu'),
+    'Techniczne B2B': ('metalow', 'metalurg'),
+    'Architekci': ('architekt',),
+}
+
+def relevant_result(domain, category, title, description):
+    snippet = (title + ' ' + description).casefold()
+    return domain.endswith('.pl') and any(term in snippet for term in CATEGORY_TERMS[category])
+
 UA = 'EcoWebLabRadar/1.0 (public homepage quality screening; ecoweblab.com)'
 
 class Signals(HTMLParser):
@@ -64,15 +76,21 @@ def download(url, limit=350000):
 def discover():
     found = {}; errors = []
     for category, query in QUERIES:
-        rss = 'https://www.bing.com/search?format=rss&q=' + urllib.parse.quote(query)
+        rss = 'https://www.bing.com/search?format=rss&cc=pl&setlang=pl&mkt=pl-PL&q=' + urllib.parse.quote(query)
         try:
             xml, _ = download(rss, 1000000)
+            accepted = 0
             for item in ET.fromstring(xml).findall('.//item')[:20]:
                 original = (item.findtext('link') or '').strip()
                 try: domain = public_url(original)
                 except Exception: continue
+                if not relevant_result(domain, category, item.findtext('title') or '', item.findtext('description') or ''):
+                    continue
+                accepted += 1
                 if domain not in found:
-                    found[domain] = {'domain':domain, 'url':'https://'+domain+'/', 'category':category, 'source':original}
+                    found[domain] = {'domain':domain, 'url':'https://'+urllib.parse.urlparse(original).hostname+'/', 'category':category, 'source':original}
+            if not accepted:
+                errors.append(category + ': brak wyników spełniających filtr polskiej domeny i branży; nie dodano przypadkowych stron')
         except Exception as ex:
             errors.append(category + ': ' + str(ex)[:140])
     return list(found.values()), errors
@@ -119,7 +137,7 @@ def main():
                 try: domain = public_url(value)
                 except Exception: continue
                 if domain not in existing:
-                    found.append({'domain':domain, 'url':'https://'+domain+'/',
+                    found.append({'domain':domain, 'url':'https://'+urllib.parse.urlparse(value).hostname+'/',
                                   'category':row.get('industry', 'B2B'), 'source':'seeds.csv'})
                     existing.add(domain)
     results=[]
