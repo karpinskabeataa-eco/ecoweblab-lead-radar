@@ -26,3 +26,7 @@ Szuka producentów, firm CNC, dystrybutorów, firm technicznych i architektonicz
 ## Dodatkowe strony do sprawdzenia
 
 Opcjonalnie stwórz w głównym katalogu `seeds.csv` z nagłówkami `url,industry` i adresami **publicznych stron firm**. Nie dodawaj tam danych poufnych.
+
+## Kontrola trafności
+
+Wyniki automatycznego wyszukiwania muszą mieć domenę `.pl` oraz termin branżowy w tytule lub opisie wyniku RSS. Jest to filtr heurystyczny, nie potwierdzenie profilu firmy; może pominąć polskie firmy z innymi domenami. Gdy źródło nie dostarczy trafnych wyników, raport opisuje brak wyników zamiast prezentować przypadkowe strony. Lista `seeds.csv` jest opcjonalnym źródłem ręcznie wybranych publicznych domen. Skrypt nie śledzi przekierowań HTTP — takie strony są wykazywane jako błędy pobrania.
