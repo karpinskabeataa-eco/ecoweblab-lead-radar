@@ -9,7 +9,7 @@ Automatyczny screening stron polskich firm B2B, bez VPS, karty i zewnętrznych p
 3. Po wykonaniu otwórz **Summary** — tabela potencjalnych okazji.
 4. W **Artifacts** pobierz plik `leady.csv` (Excel) i `raport.md`.
 
-Automat będzie planowany codziennie o 06:17 UTC. GitHub może opóźniać harmonogram, a w publicznym nieaktywnym repozytorium może go czasowo wyłączyć.
+Automat jest skonfigurowany na codziennie o 06:17 UTC (08:17 czasu letniego lub 07:17 czasu zimowego w Polsce). Skan uruchamia się również po zmianach `radar.py`, `seeds.csv` lub workflow na gałęzi `main`, a także ręcznie przez **Run workflow**. GitHub może opóźniać harmonogram, a w publicznym nieaktywnym repozytorium może go czasowo wyłączyć.
 
 ## Co robi
 
