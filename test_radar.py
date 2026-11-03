@@ -104,4 +104,21 @@ class QualificationTests(unittest.TestCase):
         self.assertEqual([x['domain'] for x in found],['factory.example'])
         self.assertTrue(any('Małe pokrycie' in x for x in errors))
 
+    def test_seed_list_does_not_hide_empty_search(self):
+        class Reply:
+            def __enter__(self): return self
+            def __exit__(self,*args): pass
+            def read(self,*args): return b'<rss><channel/></rss>'
+        class Opener:
+            def open(self,*args,**kwargs): return Reply()
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp)/'seeds.csv').write_text('url\nhttps://factory.example/o-nas/\nhttps://other.example/o-nas/\nhttps://third.example/o-nas/\n')
+            errors=[]
+            with patch.object(radar.R,'build_opener',return_value=Opener()),patch.object(radar,'QUERIES',['producent']),patch.object(radar,'ROOT',Path(tmp)):
+                found=radar.discover(errors)
+        self.assertEqual(len(found),3)
+        self.assertIn('0 różnych domen przed listą startową',errors[0])
+        self.assertEqual(found[0]['url'],'https://factory.example/')
+        self.assertEqual(found[0]['identity_url'],'https://factory.example/o-nas/')
+
 if __name__=='__main__': unittest.main()

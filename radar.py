@@ -118,6 +118,9 @@ def discover(errors):
                 found.setdefault(host, {'domain':host,'url':U.urlunsplit((p.scheme,p.netloc,'/','','')),'source':link})
         except Exception as ex:
             errors.append('Wyszukiwanie '+query+': '+type(ex).__name__)
+    search_domains=len(found)
+    if search_domains<3:
+        errors.append('Małe pokrycie wyszukiwania RSS: '+str(search_domains)+' różnych domen przed listą startową. Adresy seeds.csv nie są nowymi odkryciami wyszukiwarki.')
     seed = ROOT/'seeds.csv'
     if seed.exists():
         with seed.open(encoding='utf-8-sig') as f:
@@ -128,8 +131,6 @@ def discover(errors):
                 if host and not blocked(host):
                     parsed=U.urlsplit(url)
                     found[host]={'domain':host,'url':U.urlunsplit((parsed.scheme,parsed.netloc,'/','','')),'source':url,'identity_url':url}
-    if len(found)<3:
-        errors.append('Małe pokrycie wyszukiwania: '+str(len(found))+' różnych domen. Brak wyników nie oznacza braku firm; uzupełnij seeds.csv zweryfikowanymi adresami.')
     return list(found.values())
 
 DOM = """() => ({
