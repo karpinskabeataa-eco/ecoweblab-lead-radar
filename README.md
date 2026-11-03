@@ -21,3 +21,13 @@ GitHub Actions: 06:17 UTC codziennie (08:17 latem / 07:17 zimą w Polsce), ręcz
 Osobne zadanie w ChatGPT dostarcza podsumowanie około 09:00 czasu Europe/Warsaw i uzupełnia słabe wyniki źródła wyszukiwaniem oraz weryfikacją. Workflow sam nie wysyła wiadomości do ChatGPT.
 
 GitHub może opóźniać skany i wyłącza harmonogram publicznego repo po 60 dniach bez aktywności. Brak płatnych API, VPS i karty. Żadnych wiadomości marketingowych ani logowania do stron firm. Repozytorium, logi i artefakty są publiczne: nie dodawaj kluczy, danych klientów ani notatek CRM.
+
+## Poprawka kwalifikacji — 3 listopada 2026
+
+Portal finansowy lub artykuł o inwestycji innej firmy nie jest producentem. Radar odrzuca znane portale, wydawców oznaczonych NewsMediaOrganization i strony redakcyjne. Dowód musi dotyczyć własnej produkcji w Polsce i pochodzić z głównej treści strony głównej lub strony o firmie/produkcji w tej samej domenie. Teksty artykułów na stronie głównej nie kwalifikują firmy. Sama polska siedziba, domena .pl, dystrybucja lub wzmianka o cudzej fabryce nie wystarczą. To celowo ostrożna heurystyka: może pominąć prawdziwego producenta, który opisuje się inaczej.
+
+Dodano cztery jawne adresy startowe w seeds.csv (Leonium, MATMAT, Scandia Cosmetics, Grapol), znalezione na firmowych stronach o produkcji w Polsce. Są to adresy do ponownego sprawdzenia, nie gotowe leady ani dowód potrzeby przebudowy strony. Pomiar dotyczy zawsze strony głównej, nawet jeśli adresem źródłowym jest strona o firmie. Małe pokrycie wyszukiwania jest zgłaszane w raporcie.
+
+Każdy przebieg zapisuje również **leady.xlsx**: arkusz Kandydaci, Pozostałe domeny i Przebieg. Odrzucenia nie znikają z pełnych wyników, ale nie trafiają do CSV ani arkusza kandydatów. Wyniki są w artefaktach uruchomienia przez 30 dni. Harmonogram i brak płatnych usług pozostają bez zmian.
+
+Testy regresji: `python -m unittest -v test_radar`. Obejmują pomyłkę Bankier.pl, cudze fabryki, portale, dystrybutorów, polską siedzibę bez produkcji, deklaracje PL/EN, domeny obce, brak dowodu i bezpieczeństwo eksportu XLSX.

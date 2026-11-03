@@ -4,6 +4,7 @@ import csv, html, ipaddress, json, os, re, socket, time
 import urllib.parse as U
 import urllib.request as R
 import xml.etree.ElementTree as ET
+import zipfile
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -11,6 +12,8 @@ from pathlib import Path
 ROOT = Path(__file__).parent
 OUT = ROOT / 'output'
 QUERIES = [
+    'producent "produkujemy w Polsce" "o nas" -site:bankier.pl -site:money.pl',
+    'producent "nasza fabryka" "w Polsce" -site:bankier.pl -site:wnp.pl',
     'producent własny zakład produkcyjny w Polsce',
     'manufacturer production plant Poland company',
     'producent obróbka CNC zakład Polska',
@@ -22,12 +25,41 @@ QUERIES = [
 ]
 EXCLUDE = {'factories.pl','panoramafirm.pl','pkt.pl','aleo.com','oferteo.pl','europages.pl','europages.com',
            'kompass.com','firmy.net','biznesfinder.pl','facebook.com','linkedin.com','youtube.com',
-           'bing.com','google.com','wikipedia.org','reddit.com','olx.pl','allegro.pl','pracuj.pl'}
+           'bing.com','google.com','wikipedia.org','reddit.com','olx.pl','allegro.pl','pracuj.pl',
+           'bankier.pl','money.pl','wnp.pl','pap.pl','businessinsider.com.pl','pulshr.pl',
+           'forsal.pl','pb.pl','rp.pl','parkiet.com','portalspozywczy.pl'}
 MANUFACTURING = r'produkuj\w*|producent\w*|produkcj\w*|wytwarz\w*|manufactur\w*|production|factory'
 PLANT_POLAND = r'(?:zakład\w*|fabryk\w*|produkcj\w*|produkuj\w*|wytwarz\w*).{0,120}(?:w polsce|polsk\w*)|(?:polsk\w*).{0,80}(?:producent\w*|produkcj\w*|fabryk\w*)|(?:plant|factory|manufactur\w*|production).{0,100}(?:in poland|polish)|polish.{0,80}(?:manufacturer|factory|production)'
 DIRECTORY = r'katalog (?:firm|producentów)|baza (?:firm|producentów)|lista producentów|directory of (?:companies|manufacturers)|business directory|dodaj (?:swoją )?firmę|add your company'
 GROWTH = r'now\w* (?:hal\w*|lini\w* produkcyjn\w*|zakład\w*)|rozbudow\w* (?:zakład\w*|fabryk\w*|hal\w*)|zwiększ\w* moc\w* produkcyjn\w*|new (?:plant|factory|production line)|capacity expansion|factory expansion'
 UA = 'EcoWebLabRadar/2.0 (public website screening; ecoweblab.com)'
+
+# Evidence must describe the site's own business, on a company identity page.
+# A news article mentioning a third-party factory is never such evidence.
+IDENTITY_PATH = r'/(?:o[-_]nas|o-firmie|o-spolce|firma|about(?:-us)?|about/company|company|unternehmen|produkcja|production|manufacturing)(?:/|$|[?#])'
+EDITORIAL = r'portal (?:finansowy|informacyjny|gospodarczy|branżowy)|serwis (?:informacyjny|finansowy)|redakcj[aię]|wydawc[ayą]|news portal|news publisher'
+OWN_PRODUCTION = (
+    r'\b(?:jesteśmy|jestesmy)\s+(?:(?:polskim|polską|polska|doświadczonym|czołowym|wiodącym|rodzinnym)\s+){0,3}(?:producentem|firmą produkcyjną|firma produkcyjna)\b'
+    r'|\b(?:nasz[aeąy]|własna|własną|wlasna)\s+(?:produkcj\w*|fabryk\w*|zakład\w* produkcyjn\w*)'
+    r'|\b(?:produkujemy|wytwarzamy)\b'
+    r'|\bwe (?:are (?:a |an )?(?:(?:polish|leading|family-owned)\s+){0,2}manufacturer|manufacture|produce)\b'
+    r'|\bour (?:own )?(?:factory|production (?:plant|facility|site))\b'
+)
+OWN_POLAND = (
+    r'\b(?:produkujemy|wytwarzamy)\b[^.!?\n]{0,100}\bw Polsce\b'
+    r'|\b(?:nasz[aeąy]|własna|własną|wlasna)\s+(?:produkcj\w*|fabryk\w*|zakład\w* produkcyjn\w*)[^.!?\n]{0,100}\b(?:w Polsce|na terenie Polski)\b'
+    r'|\b(?:produkcj\w*|fabryk\w*|zakład\w* produkcyjn\w*)[^.!?\n]{0,70}\b(?:w Polsce|na terenie Polski)\b[^.!?\n]{0,50}\b(?:nasz\w*|włas\w*)\b'
+    r'|\b(?:we (?:manufacture|produce)|our (?:own )?(?:factory|production (?:plant|facility|site)))[^.!?\n]{0,100}\bin Poland\b'
+)
+
+def identity_page(url):
+    path=U.urlsplit(url).path.lower()
+    return path in ('','/') or bool(re.search(IDENTITY_PATH,path,re.I))
+
+def editorial_page(page):
+    types=page.get('schema_types',[])
+    if isinstance(types,str): types=[types]
+    return any(x.rsplit('/',1)[-1] in ('NewsMediaOrganization','NewsArticle','Newspaper') for x in types) or bool(re.search(EDITORIAL,page.get('title','')+' '+page.get('description','')+' '+page.get('text','')[:6000],re.I))
 
 @lru_cache(maxsize=2048)
 def public_host(host):
@@ -78,6 +110,7 @@ def discover(errors):
                 host = domain(link)
                 snippet = clean((item.findtext('title') or '')+' '+(item.findtext('description') or ''))
                 if not host or blocked(host) or re.search(DIRECTORY,snippet,re.I): continue
+                if re.search(r'/(?:wiadomosc|wiadomosci|artykul|articles|news)/',U.urlsplit(link).path,re.I): continue
                 # Search snippets only nominate candidates; they never qualify a lead.
                 if not re.search(MANUFACTURING,snippet,re.I): continue
                 p=U.urlsplit(link)
@@ -92,13 +125,21 @@ def discover(errors):
                 url=(r.get('url') or '').strip()
                 if '://' not in url: url='https://'+url
                 host=domain(url)
-                if host and not blocked(host): found[host]={'domain':host,'url':url,'source':'seeds.csv'}
+                if host and not blocked(host):
+                    parsed=U.urlsplit(url)
+                    found[host]={'domain':host,'url':U.urlunsplit((parsed.scheme,parsed.netloc,'/','','')),'source':url,'identity_url':url}
+    if len(found)<3:
+        errors.append('Małe pokrycie wyszukiwania: '+str(len(found))+' różnych domen. Brak wyników nie oznacza braku firm; uzupełnij seeds.csv zweryfikowanymi adresami.')
     return list(found.values())
 
 DOM = """() => ({
  text:document.body?.innerText.slice(0,80000)||'', title:document.title,
  viewport:!!document.querySelector('meta[name="viewport"]'),
  description:document.querySelector('meta[name="description"]')?.content||'',
+ schema_types:[...document.querySelectorAll('script[type="application/ld+json"]')].flatMap(x=>{
+   try {const types=[]; const walk=o=>{if(!o||typeof o!=='object')return;if(o['@type'])types.push(...[o['@type']].flat());Object.values(o).forEach(v=>Array.isArray(v)?v.forEach(walk):walk(v));};walk(JSON.parse(x.textContent));return types;}catch{return [];}
+ }),
+ identity_text:(() => {const root=(document.querySelector('main')||document.body)?.cloneNode(true); if(!root)return '';root.querySelectorAll('[itemtype*="NewsArticle"],nav,header,footer,aside,script,style').forEach(x=>x.remove());if(location.pathname==='/')root.querySelectorAll('article').forEach(x=>x.remove());return root.textContent.slice(0,80000);})(),
  h1:[...document.querySelectorAll('h1')].map(x=>x.innerText).join(' '),
  links:[...document.querySelectorAll('a[href]')].map(x=>({url:x.href,label:x.innerText.slice(0,100)})),
  images:document.images.length,
@@ -111,14 +152,26 @@ DOM = """() => ({
 })"""
 
 def classify(pages):
-    text=' '.join(p['text'] for p in pages)
-    if any(re.search(DIRECTORY,p['title']+' '+p['text'][:4000],re.I) for p in pages):
+    if not pages:
+        return False,'Brak stron do weryfikacji','',''
+    home_host=domain(pages[0].get('url',''))
+    if blocked(home_host):
+        return False,'Portal, katalog lub platforma wykluczona z wyszukiwania','',''
+    if any(editorial_page(p) for p in pages if identity_page(p.get('url',''))):
+        return False,'Portal lub wydawca treści — wzmianka o cudzej fabryce nie potwierdza własnej produkcji','',''
+    if any(re.search(DIRECTORY,p.get('title','')+' '+p.get('text','')[:4000],re.I) for p in pages):
         return False, 'Katalog lub agregator', '', ''
-    manufacture=excerpt(MANUFACTURING,text)
-    location=excerpt(PLANT_POLAND,text)
-    if not manufacture or not location:
-        return False,'Brak jednoznacznego potwierdzenia produkcji w Polsce na sprawdzonych stronach',manufacture,location
-    return True,'Produkcja w Polsce — dowód tekstowy, wymaga końcowej weryfikacji',manufacture,location
+    manufacture=''
+    for p in pages:
+        if domain(p.get('url',''))!=home_host or not identity_page(p.get('url','')): continue
+        # Runtime uses main content with article/navigation fragments removed.
+        text=re.sub(r'\s+',' ',p.get('identity_text',p.get('text','')))
+        text=' '.join(s for s in re.split(r'(?<=[.!?])\s+|\n+',text) if not re.search(r'\b(?:nie produkujemy|nie wytwarzamy|nie jesteśmy producentem|do not (?:produce|manufacture)|not a manufacturer)\b',s,re.I))
+        manufacture=manufacture or excerpt(OWN_PRODUCTION,text)
+        location=excerpt(OWN_POLAND,text)
+        if location and re.search(OWN_PRODUCTION,text,re.I):
+            return True,'Własna produkcja w Polsce — deklaracja na stronie firmowej, wymaga weryfikacji',excerpt(OWN_PRODUCTION,text),location
+    return False,'Brak deklaracji własnej produkcji w Polsce na stronie głównej lub stronie o firmie; artykuły i domena .pl nie są dowodem',manufacture,''
 
 def audit(browser, row):
     context=browser.new_context(viewport={'width':1365,'height':900},user_agent=UA,service_workers='block',accept_downloads=False)
@@ -143,10 +196,12 @@ def audit(browser, row):
         home=visit(row['url']); pages.append(home)
         # Read up to three relevant same-site pages for identity, offer and growth evidence.
         links=[]
+        identity=row.get('identity_url')
+        if identity and identity!=home['url'] and domain(identity)==domain(home['url']) and identity_page(identity): links.append(identity)
         for term in ('o nas|about|firma|company','produkt|oferta|products|offer','aktualno|news|inwest|rozwoj'):
             candidate=next((x['url'] for x in home['links'] if domain(x['url'])==domain(home['url']) and re.search(term,x['label']+' '+x['url'],re.I) and x['url'] not in links and x['url']!=home['url'] and not re.search(r'\.(pdf|zip|jpg|png)(?:\?|$)',x['url'],re.I)),None)
             if candidate: links.append(candidate)
-        for link in links:
+        for link in links[:3]:
             try: pages.append(visit(link))
             except Exception as ex: measurement_errors.append(link+': '+str(ex).splitlines()[0][:100])
         qualified,reason,manufacture,location=classify(pages)
@@ -199,6 +254,56 @@ def audit(browser, row):
 def cell(value):
     return str(value).replace('|','/').replace('\n',' ')[:1200]
 
+def write_excel(path, results, stamp, errors, discovered):
+    """Small dependency-free XLSX. Raw strings are text, never formulas."""
+    ns='http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+    fields=['domain','url','status','opportunity_score','findings','qualification','production_evidence','poland_evidence','evidence_urls','source']
+    headers=['Domena','Strona','Status','Sygnał problemów (0–100)','Zaobserwowane problemy','Kwalifikacja','Deklaracja produkcji','Deklaracja produkcji w Polsce','Sprawdzone strony','Źródło kandydata']
+    candidates=[r for r in results if r['status']=='kandydat']
+    rejected=[r for r in results if r['status']!='kandydat']
+    sheets=[('Kandydaci',[headers]+[[r.get(k,'') for k in fields] for r in candidates]),
+            ('Pozostałe domeny',[headers]+[[r.get(k,'') for k in fields] for r in rejected]),
+            ('Przebieg',[['Pole','Wartość'],['Data pomiaru UTC',stamp],['Znalezione domeny',discovered],['Sprawdzone domeny',len(results)],['Kandydaci',len(candidates)],['Ograniczenie','Kandydat nie oznacza zainteresowania zakupem. Ocena wizualna i dowody wymagają weryfikacji.'],['Pomiary','Chromium desktop/mobile, runner USA, bez symulacji CPU i łącza; nie terenowe Core Web Vitals.'],['Źródła','RSS Bing i jawna lista seeds.csv; lista startowa nie jest automatycznie listą leadów.']]+[['Problem źródła',e] for e in errors])]
+    def xml(tag,attrs=None): return ET.Element(tag,attrs or {})
+    def col(n):
+        out=''
+        while n: n,r=divmod(n-1,26);out=chr(65+r)+out
+        return out
+    def encoded(root): return ET.tostring(root,encoding='utf-8',xml_declaration=True)
+    types=xml('Types',{'xmlns':'http://schemas.openxmlformats.org/package/2006/content-types'})
+    for ext,mime in [('rels','application/vnd.openxmlformats-package.relationships+xml'),('xml','application/xml')]: ET.SubElement(types,'Default',Extension=ext,ContentType=mime)
+    ET.SubElement(types,'Override',PartName='/xl/workbook.xml',ContentType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml')
+    book=xml('workbook',{'xmlns':ns,'xmlns:r':'http://schemas.openxmlformats.org/officeDocument/2006/relationships'})
+    listed=ET.SubElement(book,'sheets')
+    rels=xml('Relationships',{'xmlns':'http://schemas.openxmlformats.org/package/2006/relationships'})
+    rootrels=xml('Relationships',{'xmlns':'http://schemas.openxmlformats.org/package/2006/relationships'})
+    ET.SubElement(rootrels,'Relationship',Id='rId1',Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument',Target='xl/workbook.xml')
+    with zipfile.ZipFile(path,'w',zipfile.ZIP_DEFLATED) as z:
+        for i,(name,rows) in enumerate(sheets,1):
+            ET.SubElement(types,'Override',PartName=f'/xl/worksheets/sheet{i}.xml',ContentType='application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml')
+            ET.SubElement(listed,'sheet',name=name,sheetId=str(i),attrib={'r:id':f'rId{i}'})
+            ET.SubElement(rels,'Relationship',Id=f'rId{i}',Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet',Target=f'worksheets/sheet{i}.xml')
+            sheet=xml('worksheet',{'xmlns':ns})
+            views=ET.SubElement(sheet,'sheetViews');view=ET.SubElement(views,'sheetView',workbookViewId='0')
+            ET.SubElement(view,'pane',ySplit='1',topLeftCell='A2',activePane='bottomLeft',state='frozen')
+            cols=ET.SubElement(sheet,'cols')
+            for j in range(1,len(rows[0])+1): ET.SubElement(cols,'col',min=str(j),max=str(j),width=str(30 if j<5 else 65),customWidth='1')
+            data=ET.SubElement(sheet,'sheetData')
+            for rownum,values in enumerate(rows,1):
+                row=ET.SubElement(data,'row',r=str(rownum))
+                for j,value in enumerate(values,1):
+                    address=f'{col(j)}{rownum}'
+                    if isinstance(value,(int,float)):
+                        c=ET.SubElement(row,'c',r=address);ET.SubElement(c,'v').text=str(value)
+                    else:
+                        c=ET.SubElement(row,'c',r=address,t='inlineStr')
+                        clean_value=re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]','',str(value))[:32767]
+                        ET.SubElement(ET.SubElement(c,'is'),'t').text=clean_value
+            if len(rows)>1: ET.SubElement(sheet,'autoFilter',ref=f'A1:{col(len(rows[0]))}{len(rows)}')
+            z.writestr(f'xl/worksheets/sheet{i}.xml',encoded(sheet))
+        z.writestr('[Content_Types].xml',encoded(types));z.writestr('_rels/.rels',encoded(rootrels))
+        z.writestr('xl/workbook.xml',encoded(book));z.writestr('xl/_rels/workbook.xml.rels',encoded(rels))
+
 def main():
     OUT.mkdir(exist_ok=True)
     errors=[]; results=[]
@@ -215,6 +320,7 @@ def main():
     results.sort(key=lambda r:r['opportunity_score'],reverse=True)
     leads=[r for r in results if r['status']=='kandydat']
     stamp=datetime.now(timezone.utc).isoformat()
+    write_excel(OUT/'leady.xlsx',results,stamp,errors,len(candidates))
     (OUT/'wyniki.json').write_text(json.dumps({'checked_at':stamp,'discovered':len(candidates),'results':results,'errors':errors},ensure_ascii=False,indent=2),encoding='utf-8')
     fields=['domain','url','status','opportunity_score','findings','production_evidence','poland_evidence','evidence_urls','source']
     with (OUT/'leady.csv').open('w',newline='',encoding='utf-8-sig') as f:
@@ -232,7 +338,8 @@ def main():
     report+=['','## Pozostałe sprawdzone domeny (nie leady)']
     report += ['- '+r['domain']+' — '+r['status']+': '+cell(r['findings']) for r in results if r['status']!='kandydat']
     report+=['','## Problemy źródła']+errors
-    report+=['','Zrzuty desktop/mobile oraz wyniki.json w artefaktach służą do oceny projektu i treści. Sam kod HTML nie potwierdza, że strona jest stara lub źle zaprojektowana.']
+    report+=['','Excel leady.xlsx zawiera kandydatów, odrzucenia i stan przebiegu. CSV zawiera tylko kandydatów.',
+             'Zrzuty desktop/mobile oraz wyniki.json w artefaktach służą do oceny projektu i treści. Sam kod HTML nie potwierdza, że strona jest stara lub źle zaprojektowana.']
     text='\n'.join(report)+'\n'
     (OUT/'raport.md').write_text(text,encoding='utf-8')
     if os.getenv('GITHUB_STEP_SUMMARY'): Path(os.environ['GITHUB_STEP_SUMMARY']).write_text(text,encoding='utf-8')
