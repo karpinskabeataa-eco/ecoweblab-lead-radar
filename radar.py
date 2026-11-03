@@ -59,7 +59,7 @@ def identity_page(url):
 def editorial_page(page):
     types=page.get('schema_types',[])
     if isinstance(types,str): types=[types]
-    return any(x.rsplit('/',1)[-1] in ('NewsMediaOrganization','NewsArticle','Newspaper') for x in types) or bool(re.search(EDITORIAL,page.get('title','')+' '+page.get('description','')+' '+page.get('text','')[:6000],re.I))
+    return any(str(x).rsplit('/',1)[-1] in ('NewsMediaOrganization','Newspaper') for x in types) or bool(re.search(EDITORIAL,page.get('title','')+' '+page.get('description','')+' '+page.get('text','')[:6000],re.I))
 
 @lru_cache(maxsize=2048)
 def public_host(host):

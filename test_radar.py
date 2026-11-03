@@ -22,6 +22,9 @@ class QualificationTests(unittest.TestCase):
     def test_editorial_self_description(self):
         self.assertFalse(radar.classify([page('Portal gospodarczy. Nasza fabryka w Polsce. Produkujemy maszyny.')])[0])
 
+    def test_manufacturer_can_have_news_schema(self):
+        self.assertTrue(radar.classify([page('Produkujemy maszyny w Polsce.',schema_types=['Organization','NewsArticle'])])[0])
+
     def test_third_party_investment_article(self):
         p=page('Jesteśmy producentem. Nasza fabryka w Polsce.',url='https://example.com/news/new-factory')
         self.assertFalse(radar.classify([page('Aktualności gospodarcze'),p])[0])
